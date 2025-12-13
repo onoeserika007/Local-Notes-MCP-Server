@@ -1,0 +1,216 @@
+.note-detail-container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.note-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.back-button {
+  padding: 8px 16px;
+  background: #f0f0f0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.back-button:hover {
+  background: #e0e0e0;
+}
+
+.note-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.ai-button {
+  padding: 8px 16px;
+  background: #4a90e2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.ai-button:hover:not(:disabled) {
+  background: #357abd;
+}
+
+.ai-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.delete-button {
+  padding: 8px 16px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.delete-button:hover {
+  background: #c0392b;
+}
+
+.note-detail-content {
+  background: white;
+  padding: 30px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.note-title {
+  margin: 0 0 20px 0;
+  font-size: 32px;
+  color: #333;
+  font-weight: 700;
+}
+
+.note-summary-box {
+  padding: 15px;
+  background: #f8f9fa;
+  border-left: 4px solid #4a90e2;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.note-summary-box strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #4a90e2;
+}
+
+.note-summary-box p {
+  margin: 0;
+  color: #666;
+  line-height: 1.6;
+}
+
+.note-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 25px;
+}
+
+.note-tags .tag {
+  padding: 6px 12px;
+  background: #e8f4f8;
+  color: #2196f3;
+  border-radius: 16px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.note-markdown {
+  color: #333;
+  line-height: 1.8;
+  font-size: 16px;
+}
+
+.note-markdown h1 {
+  font-size: 28px;
+  margin: 30px 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.note-markdown h2 {
+  font-size: 24px;
+  margin: 25px 0 12px 0;
+}
+
+.note-markdown h3 {
+  font-size: 20px;
+  margin: 20px 0 10px 0;
+}
+
+.note-markdown p {
+  margin: 12px 0;
+}
+
+.note-markdown ul,
+.note-markdown ol {
+  margin: 12px 0;
+  padding-left: 30px;
+}
+
+.note-markdown li {
+  margin: 6px 0;
+}
+
+.note-markdown code {
+  padding: 2px 6px;
+  background: #f5f5f5;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
+.note-markdown pre {
+  padding: 15px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 15px 0;
+}
+
+.note-markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.note-markdown blockquote {
+  margin: 15px 0;
+  padding: 10px 20px;
+  border-left: 4px solid #ddd;
+  background: #f9f9f9;
+  color: #666;
+}
+
+.note-footer {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+  font-size: 14px;
+  color: #999;
+}
+
+.note-file-path {
+  margin-bottom: 10px;
+  color: #666;
+}
+
+.note-timestamps div {
+  margin: 5px 0;
+}
+
+.loading,
+.empty-state,
+.error-message {
+  text-align: center;
+  padding: 60px 20px;
+  color: #999;
+  font-size: 16px;
+}
+
+.error-message {
+  color: #c62828;
+  background: #ffebee;
+  border-radius: 8px;
+}

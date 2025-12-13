@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field
 class NoteBase(BaseModel):
     """Base schema for Note"""
     title: str = Field(..., min_length=1, max_length=255, description="Note title")
-    content: str = Field(..., min_length=1, description="Note content in Markdown")
     tags: Optional[List[str]] = Field(default=[], description="List of tags")
 
 
@@ -26,9 +25,24 @@ class NoteUpdate(BaseModel):
     summary: Optional[str] = None
 
 
-class NoteResponse(NoteBase):
-    """Schema for note response"""
+class NoteListItem(NoteBase):
+    """Schema for note in list (without content)"""
     id: int
+    summary: Optional[str] = None
+    file_path: Optional[str] = None
+    file_modified_time: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class NoteResponse(NoteBase):
+    """Schema for note response (with content)"""
+    id: int
+    content: str = Field(default="", description="Note content (loaded from file if available)")
     summary: Optional[str] = None
     file_path: Optional[str] = None
     file_modified_time: Optional[datetime] = None
@@ -45,4 +59,4 @@ class NoteListResponse(BaseModel):
     total: int
     page: int
     limit: int
-    notes: List[NoteResponse]
+    notes: List[NoteListItem]

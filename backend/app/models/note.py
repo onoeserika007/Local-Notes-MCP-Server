@@ -13,7 +13,7 @@ class Note(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False, index=True)
-    content = Column(Text, nullable=False)
+    content = Column(Text, nullable=True)  # 对于 Obsidian 笔记，内容在文件中
     tags = Column(JSON, default=list)  # Store tags as JSON array
     summary = Column(Text, nullable=True)  # AI-generated summary (optional)
     
