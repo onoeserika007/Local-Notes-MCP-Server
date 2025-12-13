@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     # Vector Database (for future use)
     CHROMA_PERSIST_DIR: str = "./chroma_db"
     
+    # Obsidian Integration
+    OBSIDIAN_VAULT_PATH: str = ""
+    OBSIDIAN_AUTO_SYNC: bool = True
+    OBSIDIAN_WATCH_INTERVAL: int = 60
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True,

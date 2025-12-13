@@ -30,6 +30,8 @@ class NoteResponse(NoteBase):
     """Schema for note response"""
     id: int
     summary: Optional[str] = None
+    file_path: Optional[str] = None
+    file_modified_time: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     

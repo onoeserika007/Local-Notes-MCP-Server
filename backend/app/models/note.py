@@ -17,6 +17,10 @@ class Note(Base):
     tags = Column(JSON, default=list)  # Store tags as JSON array
     summary = Column(Text, nullable=True)  # AI-generated summary (optional)
     
+    # Obsidian integration
+    file_path = Column(String(512), nullable=True, unique=True, index=True)  # 相对于 vault 的路径
+    file_modified_time = Column(DateTime, nullable=True)  # 文件最后修改时间
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
@@ -34,6 +38,8 @@ class Note(Base):
             "content": self.content,
             "tags": self.tags or [],
             "summary": self.summary,
+            "file_path": self.file_path,
+            "file_modified_time": self.file_modified_time.isoformat() if self.file_modified_time else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -7,25 +7,44 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import init_db
-from app.api.routes import notes
+from app.api.routes import notes, ai, obsidian
+from app.services.obsidian_service import ObsidianService
+from app.services.file_watcher import FileWatcherService
+
+# 全局文件监控服务
+file_watcher: FileWatcherService = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Application lifespan events
-    Startup: Initialize database
+    Startup: Initialize database and file watcher
     Shutdown: Cleanup resources
     """
+    global file_watcher
+    
     # Startup
     print("🚀 Starting application...")
     await init_db()
     print("✅ Database initialized")
     
+    # 启动文件监控（如果配置了 Obsidian vault 路径）
+    if settings.OBSIDIAN_VAULT_PATH:
+        obsidian_service = ObsidianService(settings.OBSIDIAN_VAULT_PATH)
+        file_watcher = FileWatcherService(settings.OBSIDIAN_VAULT_PATH, obsidian_service)
+        file_watcher.start()
+        print(f"✅ File watcher started for: {settings.OBSIDIAN_VAULT_PATH}")
+    else:
+        print("⚠️  OBSIDIAN_VAULT_PATH not configured, file watcher disabled")
+    
     yield
     
     # Shutdown
     print("👋 Shutting down application...")
+    if file_watcher:
+        file_watcher.stop()
+        print("✅ File watcher stopped")
 
 
 # Create FastAPI app
@@ -47,6 +66,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(notes.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
+app.include_router(obsidian.router, prefix="/api")
 
 
 @app.get("/")

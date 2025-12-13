@@ -21,8 +21,8 @@ python-jose[cryptography]==3.3.0
 # CORS
 fastapi-cors==0.0.6
 
-# AI/LLM (will be added in Week 2)
-# dashscope==1.14.1
+# AI/LLM
+dashscope==1.20.11
 
 # Vector Database (will be added in Week 6)
 # chromadb==0.4.22

@@ -3,6 +3,11 @@
 
 BASE_URL="http://localhost:8000"
 
+# JSON 格式化函数（正确显示中文）
+format_json() {
+    python3 -c "import sys, json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))"
+}
+
 echo "================================"
 echo "测试 AI Notes API"
 echo "================================"
@@ -10,7 +15,7 @@ echo ""
 
 # 测试根路径
 echo "1. 测试根路径 GET /"
-curl -s $BASE_URL/ | python3 -m json.tool
+curl --noproxy localhost -s $BASE_URL/ | format_json
 echo -e "\n"
 
 # 测试健康检查
