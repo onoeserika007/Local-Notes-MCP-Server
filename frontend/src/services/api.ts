@@ -78,6 +78,18 @@ export const deleteNote = async (id: number): Promise<void> => {
   await api.delete(`/notes/${id}`);
 };
 
+/**
+ * 全文搜索笔记
+ */
+export const searchNotes = async (params: {
+  q: string;
+  page?: number;
+  limit?: number;
+}): Promise<NotesResponse> => {
+  const response = await api.get<NotesResponse>('/search/', { params });
+  return response.data;
+};
+
 // ==================== AI 功能 ====================
 
 /**

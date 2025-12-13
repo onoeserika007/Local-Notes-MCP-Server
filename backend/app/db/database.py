@@ -3,6 +3,7 @@ Database Configuration and Session Management
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
+from sqlalchemy import text
 from app.core.config import settings
 
 # Create async engine
@@ -45,3 +46,15 @@ async def init_db():
     """Initialize database tables"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Initialize FTS5 table
+        await conn.execute(text("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+                note_id UNINDEXED,
+                title,
+                content,
+                tags,
+                tokenize='unicode61 remove_diacritics 2'
+            )
+        """))
+        print("✅ Database and FTS5 table initialized")

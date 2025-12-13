@@ -1,9 +1,9 @@
 /**
  * 笔记列表组件 - 简化版，使用懒加载文件夹树
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getNotes, getNoteByPath } from '../services/api';
+import { getNotes, getNoteByPath, searchNotes } from '../services/api';
 import type { Note } from '../types/note';
 import FolderTree from './FolderTree';
 import './NoteList.css';
@@ -14,9 +14,12 @@ export default function NoteList() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // 实际用于搜索的查询
+  const [isComposing, setIsComposing] = useState(false); // 输入法组合状态
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const ITEMS_PER_PAGE = 20;
 
@@ -26,12 +29,11 @@ export default function NoteList() {
       setLoading(true);
       setError('');
       
-      // 加载所有笔记（带搜索）
-      const data = await getNotes({
-        page,
-        limit: ITEMS_PER_PAGE,
-        search: search || undefined,
-      });
+      // 如果有搜索词，使用全文搜索；否则加载所有笔记
+      const data = searchQuery.trim()
+        ? await searchNotes({ q: searchQuery.trim(), page, limit: ITEMS_PER_PAGE })
+        : await getNotes({ page, limit: ITEMS_PER_PAGE });
+      
       setNotes(data.notes);
       setTotal(data.total);
     } catch (err) {
@@ -41,10 +43,34 @@ export default function NoteList() {
     }
   };
 
+  // 防抖：输入完成后 500ms 才触发搜索
+  useEffect(() => {
+    // 如果正在输入法组合中，不触发搜索
+    if (isComposing) return;
+
+    // 清除之前的定时器
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // 设置新的定时器
+    searchTimeoutRef.current = setTimeout(() => {
+      setSearchQuery(search);
+      setPage(1);
+    }, 500);
+
+    // 清理函数
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [search, isComposing]);
+
   // 初始加载和参数变化时重新加载
   useEffect(() => {
     loadNotes();
-  }, [search, page]);
+  }, [searchQuery, page]);
 
   const handleFileSelect = async (filePath: string) => {
     // 点击文件：根据file_path从后端获取笔记并跳转
@@ -94,13 +120,15 @@ export default function NoteList() {
             <div className="search-bar">
               <input
                 type="text"
-                placeholder="🔍 搜索笔记标题..."
+                placeholder="🔍 搜索笔记内容（支持中英文全文搜索）..."
                 value={search}
-                onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
-                }}
+                onChange={(e) => setSearch(e.target.value)}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={() => setIsComposing(false)}
               />
+              {loading && searchQuery && (
+                <span className="search-loading">搜索中...</span>
+              )}
             </div>
           </div>
 

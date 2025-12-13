@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import init_db
-from app.api.routes import notes, ai, obsidian
+from app.api.routes import notes, ai, obsidian, search
 from app.services.obsidian_service import ObsidianService
 from app.services.file_watcher import FileWatcherService
 
@@ -69,6 +69,7 @@ app.add_middleware(
 app.include_router(notes.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(obsidian.router, prefix="/api")
+app.include_router(search.router, prefix="/api")
 
 
 @app.get("/")

@@ -11,6 +11,7 @@ from app.db.database import get_db
 from app.models.note import Note
 from app.schemas.note import NoteCreate, NoteUpdate, NoteResponse, NoteListResponse, NoteListItem
 from app.schemas.folder import FolderItem, FolderStructureResponse
+from app.services.search_service import sync_note_to_fts, delete_note_from_fts
 from app.core.config import settings
 
 router = APIRouter(prefix="/notes", tags=["Notes"])
@@ -51,6 +52,10 @@ async def create_note(
     db.add(note)
     await db.commit()
     await db.refresh(note)
+    
+    # 同步到 FTS
+    await sync_note_to_fts(db, note)
+    await db.commit()
     
     return note
 
@@ -271,6 +276,10 @@ async def update_note(
     await db.commit()
     await db.refresh(note)
     
+    # 同步到 FTS
+    await sync_note_to_fts(db, note)
+    await db.commit()
+    
     return note
 
 
@@ -289,6 +298,9 @@ async def delete_note(
     
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    
+    # 从 FTS 删除
+    await delete_note_from_fts(db, note_id)
     
     await db.delete(note)
     await db.commit()
