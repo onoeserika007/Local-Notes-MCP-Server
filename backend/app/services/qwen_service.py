@@ -3,7 +3,7 @@ Qwen AI Service
 通义千问 API 集成服务
 """
 import logging
-from typing import List, Optional
+from typing import List, Optional, Generator, Dict
 from dashscope import Generation, TextEmbedding
 import dashscope
 
@@ -77,6 +77,46 @@ class QwenService:
                 
         except Exception as e:
             logger.error(f"Chat API exception: {str(e)}")
+            raise
+    
+    def chat_stream(
+        self,
+        messages: List[Dict],
+        temperature: float = 0.7
+    ) -> Generator[str, None, None]:
+        """
+        流式聊天接口，逐步返回生成内容
+        
+        Args:
+            messages: 消息列表
+            temperature: 温度参数
+        
+        Yields:
+            每次生成的文本片段
+        """
+        try:
+            params = {
+                'model': self.model,
+                'messages': messages,
+                'result_format': 'message',
+                'temperature': temperature,
+                'stream': True,
+                'incremental_output': True
+            }
+            
+            responses = Generation.call(**params)
+            
+            for response in responses:
+                if response.status_code == 200:
+                    # 提取增量内容
+                    content = response.output.choices[0].message.content
+                    yield content
+                else:
+                    logger.error(f"Stream error: {response.code} - {response.message}")
+                    break
+        
+        except Exception as e:
+            logger.error(f"Chat stream exception: {str(e)}")
             raise
     
     def summarize(
@@ -154,8 +194,9 @@ class QwenService:
         self, 
         query: str, 
         context_notes: List[str],
-        system_prompt: Optional[str] = None
-    ) -> str:
+        system_prompt: Optional[str] = None,
+        stream: bool = False
+    ):
         """
         基于笔记上下文的对话
         
@@ -163,9 +204,11 @@ class QwenService:
             query: 用户问题
             context_notes: 相关笔记内容列表
             system_prompt: 自定义系统提示词
+            stream: 是否流式输出
             
         Returns:
-            AI 回复
+            如果stream=False，返回完整回答文本
+            如果stream=True，返回生成器
         """
         # 构建上下文
         if context_notes:
@@ -192,10 +235,13 @@ class QwenService:
         ]
         
         try:
-            response = self.chat(messages, temperature=0.7)
-            answer = response.output.choices[0].message.content
-            logger.info(f"Chat with context completed, answer length: {len(answer)}")
-            return answer
+            if stream:
+                return self.chat_stream(messages, temperature=0.7)
+            else:
+                response = self.chat(messages, temperature=0.7)
+                answer = response.output.choices[0].message.content
+                logger.info(f"Chat with context completed, answer length: {len(answer)}")
+                return answer
         except Exception as e:
             logger.error(f"Chat with context failed: {str(e)}")
             raise

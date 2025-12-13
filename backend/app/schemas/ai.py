@@ -9,6 +9,8 @@ class ChatRequest(BaseModel):
     """聊天请求"""
     query: str = Field(..., min_length=1, description="用户问题")
     note_ids: Optional[List[int]] = Field(default=None, description="相关笔记 ID 列表（可选）")
+    top_k: int = Field(default=5, ge=1, le=20, description="语义搜索检索笔记数量")
+    stream: bool = Field(default=False, description="是否流式输出")
     system_prompt: Optional[str] = Field(default=None, description="自定义系统提示词（可选）")
 
 

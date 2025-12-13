@@ -118,7 +118,7 @@ export const searchNotesHybrid = async (params: {
  * 生成笔记摘要
  */
 export const summarizeNote = async (noteId: number): Promise<Note> => {
-  const response = await api.post<Note>('/ai/summarize', { note_id: noteId });
+  const response = await api.post<Note>(`/ai/summarize/${noteId}`);
   return response.data;
 };
 
@@ -126,7 +126,7 @@ export const summarizeNote = async (noteId: number): Promise<Note> => {
  * 自动生成标签
  */
 export const autoTagNote = async (noteId: number): Promise<Note> => {
-  const response = await api.post<Note>('/ai/auto-tag', { note_id: noteId });
+  const response = await api.post<Note>(`/ai/auto-tag/${noteId}`);
   return response.data;
 };
 
