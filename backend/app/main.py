@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import init_db
-from app.api.routes import notes, ai, obsidian, search
+from app.api.routes import notes, ai, obsidian, search, semantic_search
 from app.services.obsidian_service import ObsidianService
 from app.services.file_watcher import FileWatcherService
 
@@ -33,6 +33,13 @@ async def lifespan(app: FastAPI):
     if settings.OBSIDIAN_VAULT_PATH:
         obsidian_service = ObsidianService(settings.OBSIDIAN_VAULT_PATH)
         file_watcher = FileWatcherService(settings.OBSIDIAN_VAULT_PATH, obsidian_service)
+        
+        # 先执行全量同步（扫描现有文件）
+        print("🔍 Performing initial sync...")
+        await file_watcher.sync_all_notes()
+        print("✅ Initial sync completed")
+        
+        # 启动实时监控
         file_watcher.start()
         print(f"✅ File watcher started for: {settings.OBSIDIAN_VAULT_PATH}")
     else:
@@ -70,6 +77,7 @@ app.include_router(notes.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(obsidian.router, prefix="/api")
 app.include_router(search.router, prefix="/api")
+app.include_router(semantic_search.router, prefix="/api/search", tags=["search"])
 
 
 @app.get("/")

@@ -3,8 +3,8 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { getNotes, getNoteByPath, searchNotes } from '../services/api';
-import type { Note } from '../types/note';
+import { getNotes, getNoteByPath, searchNotes, searchNotesSemantic, searchNotesHybrid } from '../services/api';
+import type { Note, SearchMode } from '../types/note';
 import FolderTree from './FolderTree';
 import './NoteList.css';
 
@@ -15,11 +15,12 @@ export default function NoteList() {
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState(''); // 实际用于搜索的查询
+  const [searchMode, setSearchMode] = useState<SearchMode>('keyword'); // 搜索模式
   const [isComposing, setIsComposing] = useState(false); // 输入法组合状态
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<number | null>(null);
 
   const ITEMS_PER_PAGE = 20;
 
@@ -29,13 +30,26 @@ export default function NoteList() {
       setLoading(true);
       setError('');
       
-      // 如果有搜索词，使用全文搜索；否则加载所有笔记
-      const data = searchQuery.trim()
-        ? await searchNotes({ q: searchQuery.trim(), page, limit: ITEMS_PER_PAGE })
-        : await getNotes({ page, limit: ITEMS_PER_PAGE });
-      
-      setNotes(data.notes);
-      setTotal(data.total);
+      // 如果有搜索词，根据搜索模式选择API；否则加载所有笔记
+      if (searchQuery.trim()) {
+        let data;
+        switch (searchMode) {
+          case 'semantic':
+            data = await searchNotesSemantic({ q: searchQuery.trim(), limit: 50 });
+            break;
+          case 'hybrid':
+            data = await searchNotesHybrid({ q: searchQuery.trim(), limit: 50 });
+            break;
+          default:
+            data = await searchNotes({ q: searchQuery.trim(), page, limit: ITEMS_PER_PAGE });
+        }
+        setNotes(data.notes);
+        setTotal(data.total);
+      } else {
+        const data = await getNotes({ page, limit: ITEMS_PER_PAGE });
+        setNotes(data.notes);
+        setTotal(data.total);
+      }
     } catch (err) {
       setError('加载笔记失败: ' + (err as Error).message);
     } finally {
@@ -54,7 +68,7 @@ export default function NoteList() {
     }
 
     // 设置新的定时器
-    searchTimeoutRef.current = setTimeout(() => {
+    searchTimeoutRef.current = window.setTimeout(() => {
       setSearchQuery(search);
       setPage(1);
     }, 500);
@@ -70,7 +84,7 @@ export default function NoteList() {
   // 初始加载和参数变化时重新加载
   useEffect(() => {
     loadNotes();
-  }, [searchQuery, page]);
+  }, [searchQuery, searchMode, page]);
 
   const handleFileSelect = async (filePath: string) => {
     // 点击文件：根据file_path从后端获取笔记并跳转
@@ -130,6 +144,33 @@ export default function NoteList() {
                 <span className="search-loading">搜索中...</span>
               )}
             </div>
+
+            {/* 搜索模式切换 */}
+            {searchQuery && (
+              <div className="search-mode-tabs">
+                <button
+                  className={`mode-tab ${searchMode === 'keyword' ? 'active' : ''}`}
+                  onClick={() => setSearchMode('keyword')}
+                  title="基于关键词的全文搜索（FTS5）"
+                >
+                  📝 关键词
+                </button>
+                <button
+                  className={`mode-tab ${searchMode === 'semantic' ? 'active' : ''}`}
+                  onClick={() => setSearchMode('semantic')}
+                  title="基于语义向量的智能搜索"
+                >
+                  🧠 语义
+                </button>
+                <button
+                  className={`mode-tab ${searchMode === 'hybrid' ? 'active' : ''}`}
+                  onClick={() => setSearchMode('hybrid')}
+                  title="结合关键词和语义的混合搜索"
+                >
+                  ⚡ 智能
+                </button>
+              </div>
+            )}
           </div>
 
           {error && <div className="error-message">{error}</div>}

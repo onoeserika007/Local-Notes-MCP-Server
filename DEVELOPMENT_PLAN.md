@@ -4,6 +4,13 @@
 > 
 > 创建时间：2025-12-13
 
+## ⚠️ 关键提示
+
+**🔴 CURL 使用规则（必须遵守）：**
+- ✅ 正确：`curl --noproxy "*" http://localhost:8000/...`
+- ❌ 错误：`curl http://localhost:8000/...`（会被代理拦截）
+- 原因：WSL2环境下需要显式禁用代理才能访问localhost
+
 ## 📋 项目概述
 
 一个类似 Local Notes MCP Server 的 AI 增强笔记应用，使用通义千问 API，包含完整的前后端实现。

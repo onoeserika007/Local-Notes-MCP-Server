@@ -14,6 +14,11 @@ export interface Note {
   updated_at: string;
 }
 
+/**
+ * 搜索模式
+ */
+export type SearchMode = 'keyword' | 'semantic' | 'hybrid';
+
 export interface NotesResponse {
   total: number;
   page: number;

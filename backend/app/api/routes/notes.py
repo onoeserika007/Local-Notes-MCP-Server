@@ -1,6 +1,7 @@
 """
 Notes API Routes
 """
+import logging
 from typing import List, Optional
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,9 +13,11 @@ from app.models.note import Note
 from app.schemas.note import NoteCreate, NoteUpdate, NoteResponse, NoteListResponse, NoteListItem
 from app.schemas.folder import FolderItem, FolderStructureResponse
 from app.services.search_service import sync_note_to_fts, delete_note_from_fts
+from app.services.vector_service import embed_note, delete_note_embedding
 from app.core.config import settings
 
 router = APIRouter(prefix="/notes", tags=["Notes"])
+logger = logging.getLogger(__name__)
 
 
 def load_note_content(note: Note) -> str:
@@ -40,12 +43,10 @@ async def create_note(
     Create a new note
     
     - **title**: Note title (required)
-    - **content**: Note content in Markdown format (required)
     - **tags**: List of tags (optional)
     """
     note = Note(
         title=note_data.title,
-        content=note_data.content,
         tags=note_data.tags or []
     )
     
@@ -56,6 +57,10 @@ async def create_note(
     # 同步到 FTS
     await sync_note_to_fts(db, note)
     await db.commit()
+    
+    # 同步到向量数据库（从文件读取内容）
+    content = load_note_content(note)
+    embed_note(note.id, note.title, content, note.tags or [])
     
     return note
 
@@ -280,6 +285,10 @@ async def update_note(
     await sync_note_to_fts(db, note)
     await db.commit()
     
+    # 更新向量嵌入（从文件读取内容）
+    content = load_note_content(note)
+    embed_note(note.id, note.title, content, note.tags or [])
+    
     return note
 
 
@@ -299,8 +308,21 @@ async def delete_note(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
     
+    # 删除物理文件
+    if note.file_path and settings.OBSIDIAN_VAULT_PATH:
+        file_path = Path(settings.OBSIDIAN_VAULT_PATH) / note.file_path
+        if file_path.exists():
+            try:
+                file_path.unlink()
+                logger.info(f"Deleted file: {file_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete file {file_path}: {e}")
+    
     # 从 FTS 删除
     await delete_note_from_fts(db, note_id)
+    
+    # 从向量数据库删除
+    delete_note_embedding(note_id)
     
     await db.delete(note)
     await db.commit()

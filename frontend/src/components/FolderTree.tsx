@@ -102,7 +102,7 @@ export default function FolderTree({ onFileSelect, selectedPath }: FolderTreePro
     }
   };
 
-  const renderItem = (item: FolderItem, level: number = 0): JSX.Element => {
+  const renderItem = (item: FolderItem, level: number = 0): React.ReactElement => {
     const isExpanded = expandedFolders.has(item.path);
     const isSelected = selectedPath === item.path;
     const hasChildren = item.is_folder;

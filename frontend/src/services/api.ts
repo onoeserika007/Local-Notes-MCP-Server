@@ -79,7 +79,7 @@ export const deleteNote = async (id: number): Promise<void> => {
 };
 
 /**
- * 全文搜索笔记
+ * 全文搜索笔记（关键词搜索）
  */
 export const searchNotes = async (params: {
   q: string;
@@ -87,6 +87,28 @@ export const searchNotes = async (params: {
   limit?: number;
 }): Promise<NotesResponse> => {
   const response = await api.get<NotesResponse>('/search/', { params });
+  return response.data;
+};
+
+/**
+ * 语义搜索笔记
+ */
+export const searchNotesSemantic = async (params: {
+  q: string;
+  limit?: number;
+}): Promise<NotesResponse> => {
+  const response = await api.get<NotesResponse>('/search/semantic', { params });
+  return response.data;
+};
+
+/**
+ * 混合搜索笔记（关键词+语义）
+ */
+export const searchNotesHybrid = async (params: {
+  q: string;
+  limit?: number;
+}): Promise<NotesResponse> => {
+  const response = await api.get<NotesResponse>('/search/hybrid', { params });
   return response.data;
 };
 

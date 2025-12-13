@@ -60,3 +60,11 @@ class NoteListResponse(BaseModel):
     page: int
     limit: int
     notes: List[NoteListItem]
+
+
+class NotesResponse(BaseModel):
+    """Schema for notes with full content"""
+    total: int
+    page: int
+    limit: int
+    notes: List[NoteResponse]

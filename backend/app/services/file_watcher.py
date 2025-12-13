@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.services.obsidian_service import ObsidianService
+from app.services.vector_service import embed_note, delete_note_embedding
 from app.models.note import Note
 from app.db.database import AsyncSessionLocal
 
@@ -59,19 +60,28 @@ class MarkdownFileHandler(FileSystemEventHandler):
     def on_created(self, event: FileSystemEvent):
         """文件创建事件 - 直接创建新记录"""
         if not event.is_directory and event.src_path.endswith('.md'):
-            logger.info(f"检测到新文件: {event.src_path}")
+            # 跳过 .obsidian 目录
+            if '.obsidian' in event.src_path:
+                return
+            logger.info(f"[Watchdog] 检测到新文件: {event.src_path}")
             self._schedule_coroutine(self._handle_file_created(event.src_path))
     
     def on_modified(self, event: FileSystemEvent):
         """文件修改事件"""
         if not event.is_directory and event.src_path.endswith('.md'):
-            logger.info(f"[on_modified] 检测到文件修改: {event.src_path}")
+            # 跳过 .obsidian 目录
+            if '.obsidian' in event.src_path:
+                return
+            logger.info(f"[Watchdog] 检测到文件修改: {event.src_path}")
             self._schedule_coroutine(self._handle_file_modified(event.src_path))
     
     def on_deleted(self, event: FileSystemEvent):
         """文件删除事件 - 直接删除记录"""
         if not event.is_directory and event.src_path.endswith('.md'):
-            logger.info(f"检测到文件删除: {event.src_path}")
+            # 跳过 .obsidian 目录
+            if '.obsidian' in event.src_path:
+                return
+            logger.info(f"[Watchdog] 检测到文件删除: {event.src_path}")
             self._schedule_coroutine(self._handle_file_deleted(event.src_path))
     
     def on_moved(self, event: FileSystemEvent):
@@ -117,7 +127,15 @@ class MarkdownFileHandler(FileSystemEventHandler):
                 )
                 db.add(new_note)
                 await db.commit()
+                await db.refresh(new_note)
                 logger.info(f"✅ 新笔记已同步到数据库: {new_note.title}")
+                
+                # 嵌入向量
+                try:
+                    embed_note(new_note.id, new_note.title, note_data.content, new_note.tags)
+                    logger.info(f"✅ 向量嵌入完成: {new_note.title}")
+                except Exception as e:
+                    logger.error(f"向量嵌入失败: {e}")
                 
         except Exception as e:
             logger.error(f"处理文件创建失败 {file_path}: {e}")
@@ -153,6 +171,13 @@ class MarkdownFileHandler(FileSystemEventHandler):
                 await db.commit()
                 logger.info(f"✅ 笔记已更新: {existing_note.title}")
                 
+                # 重新嵌入向量
+                try:
+                    embed_note(existing_note.id, existing_note.title, note_data.content, existing_note.tags)
+                    logger.info(f"✅ 向量重新嵌入完成: {existing_note.title}")
+                except Exception as e:
+                    logger.error(f"向量嵌入失败: {e}")
+                
         except Exception as e:
             logger.error(f"处理文件修改失败 {file_path}: {e}")
     
@@ -169,9 +194,17 @@ class MarkdownFileHandler(FileSystemEventHandler):
                 existing_note = result.scalar_one_or_none()
                 
                 if existing_note:
+                    note_id = existing_note.id
                     await db.delete(existing_note)
                     await db.commit()
                     logger.info(f"✅ 笔记已从数据库删除: {relative_path}")
+                    
+                    # 删除向量
+                    try:
+                        delete_note_embedding(note_id)
+                        logger.info(f"✅ 向量已删除: {note_id}")
+                    except Exception as e:
+                        logger.error(f"删除向量失败: {e}")
                 else:
                     logger.warning(f"要删除的文件不在数据库中: {relative_path}")
                     
@@ -221,6 +254,93 @@ class FileWatcherService:
         self.obsidian_service = obsidian_service
         self.observer: Optional[Observer] = None
         self.handler: Optional[MarkdownFileHandler] = None
+    
+    async def sync_all_notes(self):
+        """
+        全量同步：扫描 Obsidian vault 中所有笔记并同步到数据库
+        启动时执行，确保数据库与文件系统一致
+        """
+        logger.info("开始全量同步笔记...")
+        
+        try:
+            # 获取 vault 中所有笔记
+            all_notes = self.obsidian_service.get_all_notes()
+            logger.info(f"发现 {len(all_notes)} 个笔记文件")
+            
+            async with AsyncSessionLocal() as db:
+                # 获取数据库中现有的所有笔记路径
+                result = await db.execute(select(Note))
+                existing_notes = result.scalars().all()
+                existing_paths = {note.file_path: note for note in existing_notes}
+                logger.info(f"数据库中现有 {len(existing_paths)} 条笔记记录")
+                
+                # 处理文件系统中的每个笔记
+                vault_paths = set()
+                created_count = 0
+                updated_count = 0
+                
+                for note_data in all_notes:
+                    vault_paths.add(note_data.file_path)
+                    
+                    if note_data.file_path in existing_paths:
+                        # 已存在，检查是否需要更新
+                        existing_note = existing_paths[note_data.file_path]
+                        
+                        # 比较修改时间
+                        if (not existing_note.file_modified_time or 
+                            note_data.modified_time > existing_note.file_modified_time):
+                            existing_note.title = note_data.title
+                            existing_note.content = note_data.content
+                            existing_note.tags = note_data.tags or []
+                            existing_note.file_modified_time = note_data.modified_time
+                            existing_note.updated_at = datetime.utcnow()
+                            updated_count += 1
+                            
+                            # 重新嵌入向量
+                            try:
+                                embed_note(existing_note.id, existing_note.title, 
+                                          note_data.content, existing_note.tags)
+                            except Exception as e:
+                                logger.error(f"向量嵌入失败 {existing_note.title}: {e}")
+                    else:
+                        # 新笔记，添加到数据库
+                        new_note = Note(
+                            title=note_data.title,
+                            content=note_data.content,
+                            tags=note_data.tags or [],
+                            file_path=note_data.file_path,
+                            file_modified_time=note_data.modified_time
+                        )
+                        db.add(new_note)
+                        await db.flush()  # 刷新以获取ID
+                        created_count += 1
+                        
+                        # 嵌入向量
+                        try:
+                            embed_note(new_note.id, new_note.title, 
+                                      note_data.content, new_note.tags)
+                        except Exception as e:
+                            logger.error(f"向量嵌入失败 {new_note.title}: {e}")
+                
+                # 删除数据库中已不存在于文件系统的笔记
+                deleted_count = 0
+                for file_path, existing_note in existing_paths.items():
+                    if file_path not in vault_paths:
+                        # 文件已被删除
+                        try:
+                            delete_note_embedding(existing_note.id)
+                        except Exception as e:
+                            logger.error(f"删除向量失败 {existing_note.id}: {e}")
+                        
+                        await db.delete(existing_note)
+                        deleted_count += 1
+                
+                await db.commit()
+                
+                logger.info(f"✅ 全量同步完成：创建 {created_count}，更新 {updated_count}，删除 {deleted_count}")
+                
+        except Exception as e:
+            logger.error(f"全量同步失败: {e}")
         
     def start(self):
         """启动文件监控"""
