@@ -54,7 +54,7 @@ def get_collection():
         client = get_chroma_client()
         _collection = client.get_or_create_collection(
             name=COLLECTION_NAME,
-            metadata={"description": "Note embeddings for semantic search"}
+            metadata={"hnsw:space": "cosine"},  # 使用余弦相似度
         )
         logger.info(f"ChromaDB collection ready: {COLLECTION_NAME}")
     return _collection
@@ -122,7 +122,8 @@ async def delete_note_embedding(note_id: int):
 def search_similar(
     query: str,
     top_k: int = 20,
-    filter_metadata: Dict[str, Any] = None
+    filter_metadata: Dict[str, Any] = None,
+    min_similarity: float = 0.3  # 相似度阈值（cosine相似度 0-1，0.3表示30%相似）
 ) -> List[Dict[str, Any]]:
     """
     语义相似搜索
@@ -147,17 +148,31 @@ def search_similar(
         where=filter_metadata
     )
     
-    # 格式化结果
+    # 格式化结果并过滤低相似度
     similar_notes = []
     if results['ids'] and results['ids'][0]:
+        logger.info(f"搜索'{query}'返回{len(results['ids'][0])}条原始结果")
         for i, note_id_str in enumerate(results['ids'][0]):
-            similar_notes.append({
-                'note_id': int(note_id_str),
-                'distance': results['distances'][0][i],
-                'similarity': 1 - results['distances'][0][i],  # 距离转相似度
-                'metadata': results['metadatas'][0][i]
-            })
+            distance = results['distances'][0][i]
+            similarity = 1 - distance  # 距离转相似度
+            
+            logger.info(f"  [{i}] note_id={note_id_str}, distance={distance:.4f}, similarity={similarity:.4f}, threshold={min_similarity}")
+            
+            # 只保留相似度高于阈值的结果
+            if similarity >= min_similarity:
+                similar_notes.append({
+                    'note_id': int(note_id_str),
+                    'distance': distance,
+                    'similarity': similarity,
+                    'metadata': results['metadatas'][0][i]
+                })
+                logger.info(f"    ✓ 保留（similarity {similarity:.4f} >= {min_similarity}）")
+            else:
+                logger.info(f"    ✗ 过滤（similarity {similarity:.4f} < {min_similarity}）")
+    else:
+        logger.warning(f"搜索'{query}'没有返回任何结果")
     
+    logger.info(f"过滤后剩余{len(similar_notes)}条结果")
     return similar_notes
 
 

@@ -49,6 +49,18 @@ MCP Server 已自动配置到 Cline，配置文件位于：
 ~/.vscode-server/data/User/globalStorage/hybridtalentcomputing.cline-chinese/settings/cline_mcp_settings.json
 ```
 
+**重要提示**：
+- ✅ MCP Server 需要由 Cline **自动启动**，无需手动运行
+- ✅ 首次语义搜索会慢15-20秒（模型后台加载），之后<1秒
+- ✅ 关键词搜索立即可用
+- ❌ 不要手动运行 `python mcp_server.py`（它会等待客户端连接）
+
+**已解决的问题**：
+- ✅ 删除重复导入导致的启动卡死
+- ✅ 使用后台线程预加载模型，避免阻塞stdio通信
+- ✅ 服务器快速启动（<5秒），模型在后台加载
+- ✅ 完整测试通过（test_mcp_client.py）
+
 ### 2. 重启 VS Code 或重新加载 Cline
 
 重启 VS Code 窗口，或在 Cline 中点击"重新连接 MCP"。
@@ -150,13 +162,30 @@ cd /home/inory/agent_ws/backend
 python -c "from app.services.vector_service import initialize_embeddings; initialize_embeddings()"
 ```
 
+### 语义搜索很慢
+
+正常现象！首次调用时：
+- 加载 sentence-transformers 模型：15-20秒
+- 后续调用只需 0.4秒
+
+**优化方案**（已实现）：
+- MCP Server 启动时预加载模型
+- 首次调用会慢，之后就快了
+
 ## 技术细节
 
 - **协议**: Model Context Protocol (Anthropic 标准)
 - **通信**: stdio (标准输入输出)
 - **数据库**: 共享 Web 应用的 SQLite 数据库
 - **向量搜索**: 共享 ChromaDB 向量库
+- **模型**: paraphrase-multilingual-MiniLM-L12-v2 (384维)
 - **AI**: 无（由 Cline 提供）
+
+**性能优化**：
+- ✅ 启动时预加载 embedding 模型（避免首次调用卡顿）
+- ✅ 使用 asyncio.run_in_executor 避免阻塞事件循环
+- ✅ 模型加载：15-20秒（仅一次）
+- ✅ 查询响应：<1秒
 
 ## 下一步
 

@@ -18,23 +18,26 @@ os.chdir(backend_dir)
 
 from mcp.server import Server
 from mcp.types import Resource, Tool, TextContent, ImageContent, EmbeddedResource
+from typing import List, Dict, Optional, Any
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
 
 from app.models.note import Note
 from app.db.database import Base
-from app.services.vector_service import search_similar
 
-# 配置日志
+# 配置日志 - 同时输出到stderr和文件
+log_file = os.path.join(backend_dir, "mcp_server.log")
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stderr)
+        logging.StreamHandler(sys.stderr),
+        logging.FileHandler(log_file, mode='a', encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
+logger.info(f"日志文件: {log_file}")
 
 # 数据库配置（使用相对路径）
 db_path = os.path.join(backend_dir, "notes.db")
@@ -45,7 +48,10 @@ logger.info(f"Database URL: {DATABASE_URL}")
 engine = create_async_engine(DATABASE_URL, echo=False)
 async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-# 创建MCP Server
+# 导入向量服务（用于预加载模型）
+from app.services.vector_service import get_embedding_model, search_similar
+
+# 创建全局MCP Server
 app = Server("notes-rag")
 
 # ============ Helper Functions ============
@@ -71,6 +77,14 @@ async def search_notes_db(query: str, limit: int = 20) -> List[Note]:
             ).limit(limit)
         )
         return result.scalars().all()
+
+async def search_notes_semantic(query: str, limit: int = 20) -> List[Dict]:
+    """语义搜索笔记（异步包装）"""
+    import asyncio
+    # 在线程池中运行同步的向量搜索，避免阻塞事件循环
+    loop = asyncio.get_event_loop()
+    results = await loop.run_in_executor(None, search_similar, query, limit)
+    return results
 
 async def get_all_notes() -> List[Note]:
     """获取所有笔记"""
@@ -151,6 +165,7 @@ async def read_resource(uri: str) -> str:
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     """列出所有可用的工具"""
+    logger.info("收到list_tools请求")
     return [
         Tool(
             name="search_notes",
@@ -170,8 +185,8 @@ async def list_tools() -> list[Tool]:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "返回结果数量",
-                        "default": 10
+                        "description": "返回结果数量（推荐20-50）",
+                        "default": 30
                     }
                 },
                 "required": ["query"]
@@ -235,19 +250,30 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name == "search_notes":
         query = arguments["query"]
         mode = arguments.get("mode", "keyword")
-        limit = arguments.get("limit", 10)
+        limit = arguments.get("limit", 30)
+        
+        logger.info(f"=== search_notes 调用 ===")
+        logger.info(f"  query: {query}")
+        logger.info(f"  mode: {mode}")
+        logger.info(f"  limit: {limit}")
+        logger.info(f"  原始arguments: {arguments}")
         
         if mode == "semantic":
             # 语义搜索
             try:
-                similar_notes = search_similar(query, top_k=limit)
+                logger.info(f"开始语义搜索: query='{query}', limit={limit}")
+                similar_notes = await search_notes_semantic(query, limit)
+                logger.info(f"语义搜索完成，找到 {len(similar_notes)} 条结果")
+                
                 if similar_notes:
                     note_ids = [item['note_id'] for item in similar_notes]
+                    logger.info(f"准备查询数据库，note_ids={note_ids[:5]}...")
                     async with async_session_maker() as db:
                         result = await db.execute(
                             select(Note).where(Note.id.in_(note_ids))
                         )
                         notes = result.scalars().all()
+                        logger.info(f"数据库查询完成，找到 {len(notes)} 条笔记")
                         
                         # 按相似度排序
                         notes_dict = {note.id: note for note in notes}
@@ -265,7 +291,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 else:
                     results = []
             except Exception as e:
-                logger.error(f"语义搜索失败: {str(e)}")
+                logger.error(f"语义搜索失败: {str(e)}", exc_info=True)
                 results = []
         else:
             # 关键词搜索
@@ -364,10 +390,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 async def main():
     """主函数"""
-    from mcp.server.stdio import stdio_server
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Notes MCP Server")
+    parser.add_argument("--mode", choices=["stdio", "http"], default="http", 
+                       help="通信模式: stdio (标准输入输出) 或 http (HTTP服务器)")
+    parser.add_argument("--host", default="127.0.0.1", help="HTTP模式的监听地址")
+    parser.add_argument("--port", type=int, default=8001, help="HTTP模式的端口")
+    args = parser.parse_args()
     
     logger.info("========================================")
-    logger.info("启动 Notes MCP Server...")
+    logger.info(f"启动 Notes MCP Server (模式: {args.mode})...")
     logger.info(f"工作目录: {os.getcwd()}")
     logger.info(f"数据库: {DATABASE_URL}")
     logger.info("========================================")
@@ -379,13 +412,95 @@ async def main():
     except Exception as e:
         logger.error(f"数据库连接失败: {e}")
     
-    # 运行MCP服务器（使用stdio通信）
-    async with stdio_server() as (read_stream, write_stream):
-        await app.run(
-            read_stream,
-            write_stream,
-            app.create_initialization_options()
+    # 在后台线程预加载模型（不阻塞服务器启动）
+    def preload_model():
+        try:
+            logger.info("后台预加载embedding模型...")
+            model = get_embedding_model()
+            logger.info("模型预加载完成")
+        except Exception as e:
+            logger.warning(f"模型预加载失败: {e}")
+    
+    import threading
+    threading.Thread(target=preload_model, daemon=True).start()
+    logger.info("MCP Server就绪，模型正在后台加载...")
+    
+    if args.mode == "stdio":
+        # 使用stdio通信（供Cline调用）
+        from mcp.server.stdio import stdio_server
+        logger.info("使用 stdio 模式")
+        async with stdio_server() as (read_stream, write_stream):
+            await app.run(
+                read_stream,
+                write_stream,
+                app.create_initialization_options()
+            )
+    else:
+        # 使用HTTP通信（方便调试）
+        from mcp.server.sse import SseServerTransport
+        from starlette.applications import Starlette
+        from starlette.routing import Route, Mount
+        from starlette.responses import Response
+        from starlette.requests import Request
+        import uvicorn
+        
+        logger.info(f"使用 HTTP 模式，监听 {args.host}:{args.port}")
+        
+        sse_transport = SseServerTransport("/messages")
+        
+        async def handle_sse(request: Request):
+            """处理SSE连接"""
+            logger.info(f"收到SSE连接: {request.url}")
+            
+            async with sse_transport.connect_sse(
+                request.scope,
+                request.receive,
+                request._send
+            ) as (read_stream, write_stream):
+                logger.info("SSE连接已建立，开始MCP会话")
+                try:
+                    await app.run(
+                        read_stream,
+                        write_stream,
+                        app.create_initialization_options()
+                    )
+                    logger.info("MCP会话正常结束")
+                except Exception as e:
+                    logger.error(f"MCP会话异常: {e}", exc_info=True)
+        
+        async def handle_post_message_asgi(scope, receive, send):
+            """处理POST消息 - 原始ASGI接口"""
+            query_string = scope.get('query_string', b'').decode()
+            logger.info(f"收到POST消息: {scope['path']} (query: {query_string})")
+            await sse_transport.handle_post_message(scope, receive, send)
+        
+        # 包装成可调用的ASGI app
+        class ASGIApp:
+            def __init__(self, handler):
+                self.handler = handler
+            async def __call__(self, scope, receive, send):
+                await self.handler(scope, receive, send)
+        
+        from starlette.routing import Mount
+        
+        starlette_app = Starlette(
+            debug=True,
+            routes=[
+                Route("/sse", endpoint=handle_sse),
+                Mount("", app=ASGIApp(handle_post_message_asgi)),  # 匹配所有路径
+            ]
         )
+        
+        logger.info(f"MCP Server HTTP 端点: http://{args.host}:{args.port}/sse")
+        config = uvicorn.Config(
+            starlette_app, 
+            host=args.host, 
+            port=args.port, 
+            log_level="info",
+            access_log=True
+        )
+        server = uvicorn.Server(config)
+        await server.serve()
 
 if __name__ == "__main__":
     asyncio.run(main())
