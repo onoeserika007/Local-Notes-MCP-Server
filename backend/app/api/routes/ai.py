@@ -32,16 +32,18 @@ async def chat_with_notes(
     qwen: QwenService = Depends(get_qwen_service)
 ):
     """
-    基于笔记的 AI 对话（RAG核心功能）
+    基于笔记的 AI 对话（RAG核心功能 - Map-Reduce方案）
     
-    工作流程：
-    1. 如果指定了note_ids，直接使用这些笔记作为上下文
-    2. 否则，使用语义搜索检索相关笔记
-    3. 构建上下文并调用LLM生成回答
+    工作流程（两阶段）：
+    1. Map阶段：AI阅读所有笔记的标题+摘要+标签（轻量级全局视图）
+    2. Reduce阶段：精读语义检索到的top-k条完整笔记内容
+    3. 综合两阶段信息生成回答
+    
+    这样AI既了解整个知识库结构，又能深入阅读相关笔记。
     
     - **query**: 用户问题
     - **note_ids**: 相关笔记 ID 列表（可选）
-    - **top_k**: 语义搜索检索笔记数量（默认5）
+    - **top_k**: 语义搜索检索笔记数量（默认15）
     - **stream**: 是否流式输出（默认false）
     - **system_prompt**: 自定义系统提示词（可选）
     """
@@ -70,7 +72,7 @@ async def chat_with_notes(
             ]
         else:
             # 使用语义搜索相关笔记
-            top_k = getattr(request, 'top_k', 5)
+            top_k = getattr(request, 'top_k', 15)  # 增加到15条
             similar_notes = search_similar(
                 query=request.query,
                 top_k=top_k
@@ -100,6 +102,32 @@ async def chat_with_notes(
         
         logger.info(f"Found {len(context_notes)} context notes")
         
+        # ============ Map阶段：获取所有笔记的全局视图 ============
+        # 获取所有笔记的标题、摘要、标签（轻量级信息）
+        total_notes_result = await db.execute(select(Note))
+        all_notes = total_notes_result.scalars().all()
+        
+        # 构建全局笔记索引（标题+摘要+标签）
+        all_notes_overview = []
+        for note in all_notes:
+            note_info = {
+                "id": note.id,
+                "title": note.title,
+                "tags": note.tags or [],
+                "summary": note.summary or (note.content or "")[:150]  # 使用摘要或前150字
+            }
+            all_notes_overview.append(note_info)
+        
+        # 统计信息
+        all_tags = set(tag for note in all_notes for tag in (note.tags or []))
+        library_stats = {
+            "total_notes": len(all_notes),
+            "total_tags": len(all_tags),
+            "topics": list(all_tags)[:20]  # 前20个标签作为主题
+        }
+        
+        logger.info(f"Library overview: {len(all_notes)} notes, {len(all_tags)} unique tags")
+        
         # 检查是否支持流式输出
         stream = getattr(request, 'stream', False)
         
@@ -110,6 +138,8 @@ async def chat_with_notes(
                     for chunk in qwen.chat_with_context(
                         query=request.query,
                         context_notes=context_notes,
+                        all_notes_overview=all_notes_overview,  # 传入所有笔记概览
+                        library_stats=library_stats,
                         system_prompt=request.system_prompt,
                         stream=True
                     ):
@@ -135,6 +165,8 @@ async def chat_with_notes(
             reply = qwen.chat_with_context(
                 query=request.query,
                 context_notes=context_notes,
+                all_notes_overview=all_notes_overview,  # 传入所有笔记概览
+                library_stats=library_stats,
                 system_prompt=request.system_prompt,
                 stream=False
             )

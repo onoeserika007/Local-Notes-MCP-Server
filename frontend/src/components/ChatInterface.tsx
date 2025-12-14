@@ -57,7 +57,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) 
         },
         body: JSON.stringify({
           query: userMessage.content,
-          top_k: 5,
+          top_k: 15,  // 增加到15条笔记
           stream: true,
         }),
       });
@@ -67,7 +67,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) 
       }
 
       const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+      const decoder = new TextDecoder('utf-8', { fatal: false });  // 添加容错处理
 
       if (!reader) {
         throw new Error('No response body');
@@ -80,12 +80,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) 
 
       setMessages((prev) => [...prev, assistantMessage]);
 
+      let buffer = '';  // 添加缓冲区处理不完整的行
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
+        // 解码时保持流模式，避免截断多字节字符
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += chunk;
+        
+        // 按行处理，保留不完整的行
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';  // 保留最后一行（可能不完整）
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -102,13 +109,28 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) 
             }
 
             // 追加内容
-            assistantMessage.content += data;
-            setMessages((prev) => {
-              const newMessages = [...prev];
-              newMessages[newMessages.length - 1] = { ...assistantMessage };
-              return newMessages;
-            });
+            if (data) {  // 只处理非空数据
+              assistantMessage.content += data;
+              setMessages((prev) => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1] = { ...assistantMessage };
+                return newMessages;
+              });
+            }
           }
+        }
+      }
+      
+      // 处理剩余的buffer
+      if (buffer && buffer.startsWith('data: ')) {
+        const data = buffer.slice(6).trim();
+        if (data && data !== '[DONE]' && !data.startsWith('[ERROR]')) {
+          assistantMessage.content += data;
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { ...assistantMessage };
+            return newMessages;
+          });
         }
       }
     } catch (error) {

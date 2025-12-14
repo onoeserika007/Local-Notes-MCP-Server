@@ -6,6 +6,11 @@
 
 ## ⚠️ 关键提示
 
+**🔴 依赖管理规则（必须遵守）：**
+- ✅ 正确：先在 `requirements.txt` 添加依赖，再执行 `uv pip install -r requirements.txt`
+- ❌ 错误：直接执行 `uv pip install package-name`
+- 原因：确保依赖版本可追溯，避免环境不一致
+
 **🔴 CURL 使用规则（必须遵守）：**
 - ✅ 正确：`curl --noproxy "*" http://localhost:8000/...`
 - ❌ 错误：`curl http://localhost:8000/...`（会被代理拦截）

@@ -194,15 +194,19 @@ class QwenService:
         self, 
         query: str, 
         context_notes: List[str],
+        all_notes_overview: Optional[List[dict]] = None,  # 所有笔记的概览
+        library_stats: Optional[dict] = None,
         system_prompt: Optional[str] = None,
         stream: bool = False
     ):
         """
-        基于笔记上下文的对话
+        基于笔记上下文的对话（Map-Reduce方案）
         
         Args:
             query: 用户问题
-            context_notes: 相关笔记内容列表
+            context_notes: 相关笔记完整内容列表（Reduce阶段-精读）
+            all_notes_overview: 所有笔记的概览信息（Map阶段-全局视图）
+            library_stats: 笔记库统计信息
             system_prompt: 自定义系统提示词
             stream: 是否流式输出
             
@@ -210,28 +214,73 @@ class QwenService:
             如果stream=False，返回完整回答文本
             如果stream=True，返回生成器
         """
-        # 构建上下文
+        
+        # ============ 构建Map阶段信息（全局笔记索引）============
+        notes_index = ""
+        if all_notes_overview:
+            # 限制最多显示前100条笔记的概览（避免token过多）
+            overview_limit = min(100, len(all_notes_overview))
+            notes_list = []
+            for i, note in enumerate(all_notes_overview[:overview_limit]):
+                tags_str = "、".join(note.get("tags", [])[:3])  # 最多3个标签
+                summary = note.get("summary", "")[:100]  # 摘要最多100字
+                notes_list.append(
+                    f"{i+1}. 《{note['title']}》 [{tags_str}] - {summary}"
+                )
+            notes_index = f"\n\n【笔记库索引 - 共{len(all_notes_overview)}条，展示前{overview_limit}条】\n" + "\n".join(notes_list)
+        
+        # 构建笔记库概览
+        library_info = ""
+        if library_stats:
+            topics_str = "、".join(library_stats.get("topics", [])[:15])
+            library_info = f"""
+【笔记库概览】
+- 总笔记数：{library_stats.get('total_notes', 0)} 条
+- 主要主题：{topics_str}
+"""
+        
+        # ============ 构建Reduce阶段信息（详细上下文）============
+        detailed_context = ""
         if context_notes:
-            context = "\n\n---\n\n".join([
-                f"笔记 {i+1}:\n{note[:1000]}" 
+            detailed_context = "\n\n---\n\n".join([
+                f"相关笔记 {i+1}（详细内容）:\n{note[:2000]}"  # 每条2000字符
                 for i, note in enumerate(context_notes)
             ])
         else:
-            context = "没有找到相关笔记。"
+            detailed_context = "未检索到高度相关的笔记详细内容。"
         
-        # 默认系统提示词
+        # 默认系统提示词（强调两阶段信息）
         if not system_prompt:
-            system_prompt = """你是一个智能笔记助手。你的任务是基于用户的笔记内容回答问题。
-要求：
-1. 仔细阅读提供的笔记内容
-2. 基于笔记内容回答问题，必要时引用具体笔记
-3. 如果笔记中没有相关信息，诚实告知用户
-4. 回答要简洁、准确、有条理
-5. 使用中文回答"""
+            system_prompt = f"""你是一个智能笔记助手，采用Map-Reduce方式理解用户的笔记库。
+
+{library_info}
+
+你掌握的信息：
+1. 【全局视图】所有笔记的标题、标签和摘要（帮你了解整个知识库结构）
+2. 【详细内容】与当前问题高度相关的笔记完整内容（用于深度分析）
+
+回答要求：
+1. 优先基于提供的详细笔记内容回答
+2. 如果详细笔记不够，可参考全局笔记索引，建议用户查看相关笔记
+3. 必要时引用具体笔记标题
+4. 如果知识库中确实没有相关信息，诚实告知
+5. 回答简洁、准确、有条理
+6. 使用中文回答"""
+        
+        # 组合消息（先全局视图，再详细内容，最后是问题）
+        user_content = f"""{notes_index}
+
+{"="*50}
+【相关笔记详细内容】
+{detailed_context}
+
+{"="*50}
+【用户问题】
+{query}"""
         
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"参考笔记：\n{context}\n\n问题：{query}"}
+            {"role": "user", "content": user_content}
         ]
         
         try:
